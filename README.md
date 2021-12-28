@@ -19,3 +19,4 @@ Sound effects and music related hardware (in Chisel)
 # Resources
 
 * wavefile tools, but Scala 2.11 https://github.com/mziccard/scala-audio-file/blob/master/src/main/scala/me/mziccard/audio/WavFile.scala
+* Java libraries https://docs.oracle.com/javase/tutorial/sound/sampled-overview.html

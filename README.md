@@ -15,3 +15,7 @@ Sound effects and music related hardware (in Chisel)
   * AC97 AD/DA converter
   * Simple sigma-delta IO
 * Make it a project for students at DTU
+
+# Resources
+
+* wavefile tools, but Scala 2.11 https://github.com/mziccard/scala-audio-file/blob/master/src/main/scala/me/mziccard/audio/WavFile.scala

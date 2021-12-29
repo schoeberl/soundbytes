@@ -6,7 +6,7 @@ object Hello extends App {
   println("Hello SoundBytes")
 
   val buf = new Array[Byte](2)
-  val sampleFrequency = 44100
+  val sampleFrequency = Constants.SampleFrequency
   val af = new AudioFormat(sampleFrequency.toFloat, 16, 1, true, false)
   val sdl = AudioSystem.getSourceDataLine(af)
   sdl.open()

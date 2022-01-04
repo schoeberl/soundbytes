@@ -16,6 +16,11 @@ Sound effects and music related hardware (in Chisel)
   * Simple sigma-delta IO
 * Make it a project for students at DTU
 
+# Notes
+
+* A full ready/valid handshake is a bit of an overkill
+  * The source may just use a periodic single cycle valid
+
 # Resources
 
 * wavefile tools, but Scala 2.11 https://github.com/mziccard/scala-audio-file/blob/master/src/main/scala/me/mziccard/audio/WavFile.scala

@@ -12,6 +12,10 @@ class Tremolo extends Module {
   val regData = RegInit(0.S(16.W))
   val idle :: hasValue :: Nil = Enum(2)
   val regState = RegInit(idle)
+  val regTick = RegInit(false.B)
+  regTick := false.B
+
+  val multiply = WireDefault(0x0ffff.U(16.W))
 
   val inVal = io.in.bits
   io.out.bits := regData
@@ -21,8 +25,9 @@ class Tremolo extends Module {
   switch (regState) {
     is (idle) {
       when(io.in.valid) {
-        regData := inVal
+        regData := (inVal * multiply) >> 16
         regState := hasValue
+        regTick := true.B
       }
     }
     is (hasValue) {
@@ -31,4 +36,23 @@ class Tremolo extends Module {
       }
     }
   }
+
+  // Compute the tremolo
+  val regCnt = RegInit(0x8000.U(16.W))
+  val regUp = RegInit(true.B)
+  when (regTick) {
+    when (regUp) {
+      regCnt := regCnt + 8.U
+      when (regCnt > 0xff00.U) {
+        regUp := false.B
+      }
+    } .otherwise {
+      regCnt := regCnt - 8.U
+      when (regCnt < 0x8000.U) {
+        regUp := true.B
+      }
+    }
+  }
+  multiply := regCnt
+
 }

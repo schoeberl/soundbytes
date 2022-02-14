@@ -52,9 +52,14 @@ class SoundTest extends FlatSpec with ChiselScalatestTester {
 
       // Play back
       startPlayer
-      for (s <- outSamples) {
+      
+      // Writing sample by sample seems to cause problems due to interrupt masking
+      /*for (s <- outSamples) {
         play(s)
-      }
+      }*/
+      
+      play_array(outSamples)
+      
       stopPlayer
 
     }

@@ -9,7 +9,8 @@ object Sounds {
   val buf = new Array[Byte](2)
   val af = new AudioFormat(Constants.SampleFrequency.toFloat, 16, 1, true, false)
   val sdl = AudioSystem.getSourceDataLine(af)
-
+  
+  
   def getSamples = {
     val samples = new Array[Short](50000)
 
@@ -40,18 +41,45 @@ object Sounds {
   }
 
   def startPlayer = {
-    sdl.open()
+  	println("starting")
+    sdl.open(af, 2048)
     sdl.start()
+  	println("started")
   }
 
-  def play(s: Short): Unit = {
+  def play(s: Short) = {
     buf(0) = (s & 0xFF).toByte // low byte first
     buf(1) = (s >> 8).toByte
-
-    sdl.write(buf, 0, 2)
+	sdl.write(buf, 0, 2)
   }
+  
+  def play_array(arr: Array[Short]) = {
+    var samples = arr.length
+    var offset = 0
+    var arr_conv = new Array[Byte](2048)
+
+    while(samples > 1024) {
+      for(i <- 0 until 1024) {
+        arr_conv(2 * i) = (arr(offset + i) & 0xFF).toByte // low byte first
+        arr_conv(2 * i + 1) = (arr(offset + i) >> 8).toByte
+	    }
+	    sdl.write(arr_conv, 0, 2048)
+	    samples -= 1024
+	    offset += 1024
+  	}
+
+    for(i <- 0 until samples) {
+        arr_conv(2 * i) = (arr(offset + i) & 0xFF).toByte // low byte first
+        arr_conv(2 * i + 1) = (arr(offset + i) >> 8).toByte
+    }
+    sdl.write(arr_conv, 0, samples * 2)
+  }
+  
+  
   def stopPlayer = {
+  	println("draining")
     sdl.drain()
+  	println("drained")
   }
 
 

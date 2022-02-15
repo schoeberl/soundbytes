@@ -13,7 +13,7 @@ class SoundTest extends FlatSpec with ChiselScalatestTester {
 
   it should "play" in {
     test(new Tremolo()).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      val samples = getSamples
+      val samples = getFileSamples("sample.wav")
       val outSamples = new Array[Short](samples.length)
 
       var finished = false
@@ -58,9 +58,11 @@ class SoundTest extends FlatSpec with ChiselScalatestTester {
         play(s)
       }*/
       
-      play_array(outSamples)
+      playArray(outSamples)
       
       stopPlayer
+
+      saveArray(outSamples, "sample_out.wav")
 
     }
   }

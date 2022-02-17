@@ -28,11 +28,11 @@ class Distortion extends Module {
   val maxGainSignal = (1 << gainSourceBits) - 1
 
   val lookupBits = 9
-  val fractBits = gainSourceBits - lookupBits
-  val lookupSteps = 1 << fractBits
+  val lookupSteps = 1 << (gainSourceBits - lookupBits)
+  val fractBits = sourceBits + 8 - lookupBits
   
-  // TODO: we could exclude the 0-index
-  val lookupValues = Range(/*lookupSteps*/ 0, maxGainSignal, lookupSteps).map(i => maxSignal * (1.0 - scala.math.exp(-i.toDouble / maxSignal.toDouble)))
+  // we exclude the 0-index
+  val lookupValues = Range(lookupSteps, maxGainSignal, lookupSteps).map(i => maxSignal * (1.0 - scala.math.exp(-4.0 * i.toDouble / maxSignal.toDouble)))
   val lookupTable = VecInit(lookupValues.map(v => scala.math.round(v).asSInt(16.W)))
 
   val regData = RegInit(0.S(16.W))
@@ -47,17 +47,31 @@ class Distortion extends Module {
   val inVal = io.in.bits
   val inValAbs = inVal.abs.asUInt.min(((1 << 15) - 1).U).tail(1)
   val inValGain = inValAbs * gain
-  val lookupIndex = inValGain >> (sourceBits + 8 - lookupBits)
+  val lookupIndex = inValGain.head(lookupBits)
+  val lookupFraction = inValGain.tail(lookupBits)
+
+  val lookupLow = WireDefault(0.S(16.W))
+  val lookupHigh = WireDefault(0.S(16.W))
 
   io.in.ready := regState === idle
   io.out.valid := regState === hasValue
   switch (regState) {
     is (idle) {
       when(io.in.valid) {
+        
+        // 0-index is excluded --> mux
+        when(lookupIndex === 0.U) {
+          lookupLow := 0.S
+        }.otherwise{
+          lookupLow := lookupTable(lookupIndex - 1.U)
+        }
+
+        lookupHigh := lookupTable(lookupIndex)
+        
       	when(inVal(15)) {
-          regData := -lookupTable(lookupIndex)
+          regData := -(((lookupHigh - lookupLow) * lookupFraction).head(16).asSInt + lookupLow)
         }.otherwise {
-          regData := lookupTable(lookupIndex)
+          regData := ((lookupHigh - lookupLow) * lookupFraction).head(16).asSInt + lookupLow
 	      }
         regState := hasValue
       }

@@ -6,14 +6,19 @@ Sound effects and music related hardware (in Chisel)
 
  * Hello world done:
    * With generated tone
-   * Tremolo effect in Chisel
+   * Tremolo and Distortion effects in Chisel
    * Playback in simulation on the PC
+   * Reading and writing of .wav files
 
 # Next Steps
 
  * More effects
-   * e.g., delay
- * Write a .wav file
+   * Delay
+   * Overdrive
+   * Octaver
+   * Highpass/Lowpass/Bandpass
+   * Mixer
+ * Maybe refactor Distortion -> LookupTableBase which can be used for distortion, overdrive etc.
  * Look into related work, what is available in open source
  * Add recording a PC for the simulation
  * Get audio IO running in an FPGA

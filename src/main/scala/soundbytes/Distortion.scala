@@ -7,74 +7,110 @@ import chisel3.util._
 /**
  * Exponential distortion via lookup table.
  * Gain can be controlled via an input parameter.
+ *
+ * The gainWidth and lookupWidth should be smaller than the dataWidth.
+ * The multipliers are of size (absDataWidth) * (gainWidth) and (fractBits) * (fractBits)
+ * For gainWidth <= lookupBits a single multiplier reduces to (absDataWidth) * (absDataWidth).
  */
-class Distortion extends Module {
+class Distortion(dataWidth: Int = 16, gainWidth: Int = 4, lookupBits: Int = 8, maxGain: Double = 100.0, singleMultiplier : Boolean = false) extends Module {
   val io = IO(new Bundle {
-    val in = Flipped(new DecoupledIO(SInt(16.W)))
-    val out = new DecoupledIO(SInt(16.W))
-    //val gain = Input(UInt(8.W))
+    val in = Flipped(new DecoupledIO(SInt(dataWidth.W)))
+    val out = new DecoupledIO(SInt(dataWidth.W))
+    val gain = Input(UInt(gainWidth.W))
   })
 
-  // number of integer bits on the gain control
-  val gainBits = 3
-  val maxGain = (1 << gainBits) - 1
-
-  // number of bits required for absolute signal values without gain
-  val sourceBits = 16 - 1
-  val maxSignal = (1 << sourceBits) - 1
+  // Number of bits required for absolute signal values without gain.
+  val absDataWidth = dataWidth - 1
+  val maxSignal = (1 << absDataWidth) - 1
   
-  // number of bits required for absolute signal values incl. gain
-  val gainSourceBits = sourceBits + gainBits
-  val maxGainSignal = (1 << gainSourceBits) - 1
+  // Number of bits required for absolute signal values incl. gain.
+  val gainDataWidth = absDataWidth + gainWidth
+  val maxGainSignal = (1 << gainDataWidth) - 1
 
-  val lookupBits = 9
-  val lookupSteps = 1 << (gainSourceBits - lookupBits)
-  val fractBits = sourceBits + 8 - lookupBits
+  // Number of bits required for interpolation.
+  val fractBits = gainDataWidth - lookupBits
   
-  // we exclude the 0-index
-  val lookupValues = Range(lookupSteps, maxGainSignal, lookupSteps).map(i => maxSignal * (1.0 - scala.math.exp(-4.0 * i.toDouble / maxSignal.toDouble)))
-  val lookupTable = VecInit(lookupValues.map(v => scala.math.round(v).asSInt(16.W)))
+  // Steps and gain constant for the lookup table.
+  val lookupSteps = 1 << fractBits
+  val gainConst = maxGain / (1 << gainWidth).toDouble
+  
+  // Lookup table. We exclude the 0-index (will be muxed).
+  val lookupValues = Range(lookupSteps - 1, maxGainSignal + 1, lookupSteps).map(i => maxSignal * (1.0 - scala.math.exp(-gainConst * i.toDouble / maxSignal.toDouble)))
+  val lookupTable = VecInit(lookupValues.map(v => scala.math.round(v).asUInt(absDataWidth.W)))
 
-  val regData = RegInit(0.S(16.W))
-  val idle :: hasValue :: Nil = Enum(2)
+  println(gainDataWidth)
+  println(maxGainSignal)
+  println(fractBits)
+  println(lookupSteps)
+  println(gainConst)
+  println(lookupValues)
+  println(lookupValues.length)
+  
+  // State Variables.
+  val idle :: distort :: hasValue :: Nil = Enum(3)
   val regState = RegInit(idle)
-  
-  val gain = Wire(UInt(8.W))
-  gain := 32.U
-  
-  io.out.bits := regData
 
+  // Shared Multiplier (if needed).
+  val sharedMulIn1 = WireDefault(0.U(max(absDataWidth, fractBits).W))
+  val sharedMulIn2 = WireDefault(0.U(max(gainWidth, fractBits).W))
+  val sharedMulOut = sharedMulIn1 * sharedMulIn2
+  
+  // Gain stage.
   val inVal = io.in.bits
-  val inValAbs = inVal.abs.asUInt.min(((1 << 15) - 1).U).tail(1)
-  val inValGain = inValAbs * gain
-  val lookupIndex = inValGain.head(lookupBits)
-  val lookupFraction = inValGain.tail(lookupBits)
+  val inValAbs = inVal.abs.asUInt.min(maxSignal.U).tail(1)  
+  val regInValSign = ShiftRegister(inVal(dataWidth - 1), 2) // delay by two stages
 
-  val lookupLow = WireDefault(0.S(16.W))
-  val lookupHigh = WireDefault(0.S(16.W))
+  val gainMul = if (singleMultiplier) {sharedMulOut} else { inValAbs * io.gain }
+  val regInValGain = RegNext(gainMul)
+  
+  // Distortion stage.
+  val lookupIndex = regInValGain >> fractBits
+  val lookupFraction = regInValGain(fractBits - 1, 0)
 
+  val lookupLow = WireDefault(0.U(absDataWidth.W))
+  when(lookupIndex === 0.U) { // 0-index is excluded so we mux.
+    lookupLow := 0.U
+  }.otherwise {
+    lookupLow := lookupTable(lookupIndex - 1.U)
+  }
+  val lookupHigh = lookupTable(lookupIndex)
+  val lookupDiff = lookupHigh - lookupLow
+  val regLookupLow = RegInit(0.U(absDataWidth.W))
+  
+  val interpMul = if (singleMultiplier) {sharedMulOut} else { lookupDiff * lookupFraction }  
+  val regInterp = RegInit(0.U(absDataWidth.W))
+
+  // Output Code.
+  val regOut = RegInit(0.U(absDataWidth.W))
+  when(regInValSign === true.B) {
+    io.out.bits := -(regInterp +& regLookupLow).asSInt()
+  } .otherwise {
+    io.out.bits := (regInterp +& regLookupLow).asSInt()
+  }
+
+  // FSM.
   io.in.ready := regState === idle
   io.out.valid := regState === hasValue
   switch (regState) {
     is (idle) {
       when(io.in.valid) {
-        
-        // 0-index is excluded --> mux
-        when(lookupIndex === 0.U) {
-          lookupLow := 0.S
-        }.otherwise{
-          lookupLow := lookupTable(lookupIndex - 1.U)
+        if(singleMultiplier) {
+          sharedMulIn1 := inValAbs
+          sharedMulIn2 := io.gain
         }
-
-        lookupHigh := lookupTable(lookupIndex)
-        
-      	when(inVal(15)) {
-          regData := -(((lookupHigh - lookupLow) * lookupFraction).head(16).asSInt + lookupLow)
-        }.otherwise {
-          regData := ((lookupHigh - lookupLow) * lookupFraction).head(16).asSInt + lookupLow
-	      }
-        regState := hasValue
+        regState := distort
       }
+    }
+    is (distort) {
+      if(singleMultiplier) {
+        sharedMulIn1 := lookupDiff
+        sharedMulIn2 := lookupFraction
+      }
+      
+      regLookupLow := lookupLow
+      regInterp := interpMul >> fractBits
+      
+      regState := hasValue
     }
     is (hasValue) {
       when(io.out.ready) {

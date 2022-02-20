@@ -12,7 +12,7 @@ import chisel3.util._
  * The multipliers are of size (absDataWidth) * (gainWidth) and (fractBits) * (fractBits)
  * For gainWidth <= lookupBits a single multiplier reduces to (absDataWidth) * (absDataWidth).
  */
-class Distortion(dataWidth: Int = 16, gainWidth: Int = 4, lookupBits: Int = 8, maxGain: Double = 100.0, singleMultiplier : Boolean = false) extends Module {
+class Distortion(dataWidth: Int = 16, gainWidth: Int = 6, lookupBits: Int = 10, maxGain: Double = 350.0, singleMultiplier : Boolean = true) extends Module {
   val io = IO(new Bundle {
     val in = Flipped(new DecoupledIO(SInt(dataWidth.W)))
     val out = new DecoupledIO(SInt(dataWidth.W))

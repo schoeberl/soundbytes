@@ -12,15 +12,19 @@ import chisel3.util._
  * 1) Tweaking of regControl flipping logic and good parameter set (based on real-world samples) is necessary
  * 2) Filtering of the output signal should help to eliminate artifacts.
  */
-class OctaveDown(dataWidth: Int = 16, bufferLength: Int = 16) extends Module {
+class OctaveDown(dataWidth: Int = 16, bufferLength: Int = 64, filterCount: Int = 12) extends Module {
   val io = IO(new Bundle {
     val in = Flipped(new DecoupledIO(SInt(dataWidth.W)))
     val out = new DecoupledIO(SInt(dataWidth.W))
   })
 
   val maxSignal = (1 << (dataWidth - 1)) - 1
+  
   val maxIndex = bufferLength - 1
   val indexBits = log2Up(bufferLength)
+  
+  val maxFilter = filterCount - 1
+  val filterBits = log2Up(filterCount)
   
   val margin = 20
 
@@ -32,7 +36,7 @@ class OctaveDown(dataWidth: Int = 16, bufferLength: Int = 16) extends Module {
 
   val regOffset = RegInit(0.S(dataWidth.W))
 
-  val regRising = RegInit(0.U(indexBits.W))
+  val regRising = RegInit(0.U(filterBits.W))
   val regControl = RegInit(false.B)
   val regToggled = RegInit(false.B)
 
@@ -58,9 +62,9 @@ class OctaveDown(dataWidth: Int = 16, bufferLength: Int = 16) extends Module {
   io.in.ready := false.B
   io.out.valid := false.B
   
-  when(io.in.valid & sampleCount < maxIndex.U) {    // write to module when not full
-    when(inVal > margin.S & regToggled) {                // clearing for next peak detection
-      when(regRising < maxIndex.U) {
+  when(io.in.valid & sampleCount < maxIndex.U) {                      // write to module when not full
+    when(inVal > margin.S & regToggled) {                             // clearing for next peak detection
+      when(regRising < filterBits.U) {
         regRising := regRising + 1.U
       }.otherwise {
         regToggled := false.B
@@ -69,10 +73,10 @@ class OctaveDown(dataWidth: Int = 16, bufferLength: Int = 16) extends Module {
       }
     }
     
-    when(regRising < maxIndex.U & !regToggled) {    // peak detection
-      when(inVal < margin.S & inVal >= regLowPeak) {     // advance peak detection
+    when(regRising < filterBits.U & !regToggled) {                      // peak detection
+      when(inVal < -margin.S & inVal >= regLowPeak) {                 // advance peak detection
         regRising := regRising + 1.U
-      }.otherwise {                                 // reset peak detection
+      }.otherwise {                                                   // reset peak detection
         regRising := 0.U
         regLowPeak := inVal
         regLowPeakIndex := counter.value
@@ -86,7 +90,7 @@ class OctaveDown(dataWidth: Int = 16, bufferLength: Int = 16) extends Module {
   }
 
   when(io.out.ready & sampleCount === maxIndex.U) {
-    when(counter.value === regLowPeakIndex & regRising === maxIndex.U & !regToggled) {
+    when(counter.value === regLowPeakIndex & regRising === filterBits.U & !regToggled) {
       regOffset := regLowPeak
       regControl := !regControl
       regRising := 0.U

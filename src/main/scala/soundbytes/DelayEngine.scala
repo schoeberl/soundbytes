@@ -16,12 +16,14 @@ class DelayEngine(dataWidth: Int = 16, mixWidth: Int = 6, feedbackWidth: Int = 6
     val feedback = Input(UInt(feedbackWidth.W))
   })
   
-  val delayMix = new Mixer(dataWidth, mixWidth)
-  val feedbackMix = new Mixer(dataWidth, feedbackWidth)
+  val delayMix = Module(new Mixer(dataWidth, mixWidth))
+  val feedbackMix = Module(new Mixer(dataWidth, feedbackWidth))
   
   delayMix.io.in.valid := io.in.valid
+  delayMix.io.mix := io.mix
   feedbackMix.io.in.valid := io.in.valid
-  io.in.ready := delayMix.io.in.ready & feedbackMix.io.in.valid
+  feedbackMix.io.mix := io.feedback
+  io.in.ready := delayMix.io.in.ready & feedbackMix.io.in.ready
   
   io.out.valid := delayMix.io.out.valid & feedbackMix.io.out.valid
   delayMix.io.out.ready := io.out.ready 
@@ -35,4 +37,5 @@ class DelayEngine(dataWidth: Int = 16, mixWidth: Int = 6, feedbackWidth: Int = 6
   // Input is always present in the delay output signal (feedback < 1)
   feedbackMix.io.in.bits(0) := io.in.bits(0)
   feedbackMix.io.in.bits(1) := io.in.bits(1)
+  io.out.bits(1) := feedbackMix.io.out.bits
 }

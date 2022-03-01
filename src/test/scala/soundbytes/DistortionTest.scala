@@ -8,12 +8,12 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.FlatSpec
 import soundbytes.Sounds._
 
-class SoundTest extends AnyFlatSpec with ChiselScalatestTester {
+class DistortionTest extends AnyFlatSpec with ChiselScalatestTester {
 
-  behavior of "Tremolo"
+  behavior of "Distortion"
 
   it should "play" in {
-    test(new Tremolo()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+    test(new Distortion()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
       val samples = getFileSamples("sample.wav")
       val outSamples = new Array[Short](samples.length)
 
@@ -23,6 +23,8 @@ class SoundTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.setTimeout(0)
       dut.io.out.ready.poke(true.B)
 
+      dut.io.gain.poke(31.U)
+      
       // Write the samples
       val th = fork {
         dut.io.in.valid.poke(true.B)
@@ -55,7 +57,7 @@ class SoundTest extends AnyFlatSpec with ChiselScalatestTester {
       //playArray(outSamples)      
       //stopPlayer
 
-      saveArray(outSamples, "sample_out.wav")
+      saveArray(outSamples, "sample_distortion_out.wav")
     }
   }
 }

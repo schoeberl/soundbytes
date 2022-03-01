@@ -8,12 +8,12 @@ import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.FlatSpec
 import soundbytes.Sounds._
 
-class SoundTest extends AnyFlatSpec with ChiselScalatestTester {
+class OctaveDownTest extends AnyFlatSpec with ChiselScalatestTester {
 
-  behavior of "Tremolo"
+  behavior of "OctaveDown"
 
   it should "play" in {
-    test(new Tremolo()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
+    test(new OctaveDown()).withAnnotations(Seq(VerilatorBackendAnnotation, WriteVcdAnnotation)) { dut =>
       val samples = getFileSamples("sample.wav")
       val outSamples = new Array[Short](samples.length)
 
@@ -22,7 +22,7 @@ class SoundTest extends AnyFlatSpec with ChiselScalatestTester {
       // no timeout, as a bunch of 0 samples would lead to a timeout.
       dut.clock.setTimeout(0)
       dut.io.out.ready.poke(true.B)
-
+      
       // Write the samples
       val th = fork {
         dut.io.in.valid.poke(true.B)
@@ -55,7 +55,7 @@ class SoundTest extends AnyFlatSpec with ChiselScalatestTester {
       //playArray(outSamples)      
       //stopPlayer
 
-      saveArray(outSamples, "sample_out.wav")
+      saveArray(outSamples, "sample_octavedown_out.wav")
     }
   }
 }

@@ -7,5 +7,6 @@ resolvers ++= Seq(
   Resolver.sonatypeRepo("releases")
 )
 
-
-libraryDependencies += "edu.berkeley.cs" %% "chiseltest" % "0.3.1"
+addCompilerPlugin("edu.berkeley.cs" % "chisel3-plugin" % "3.5.0" cross CrossVersion.full)
+libraryDependencies += "edu.berkeley.cs" %% "chisel3" % "3.5.0"
+libraryDependencies += "edu.berkeley.cs" %% "chiseltest" % "0.5.0"

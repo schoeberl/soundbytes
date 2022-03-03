@@ -25,15 +25,20 @@ class DelayTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.signalOut.ready.poke(true.B)
       dut.io.signalOut.ready.poke(true.B)
 
+      val delayLengthSecond = 44100 / 8
+      val delayLength100m = delayLengthSecond / 10
+      val delayLenghts = Array(delayLength100m * 2, delayLength100m * 4, delayLength100m * 6, delayLength100m * 2)
+
       dut.io.mix.poke((1 << 5).asUInt)
       dut.io.feedback.poke((1 << 4).asUInt)
-      dut.io.delayLength.poke((44100 / 4 / 8).asUInt)
       dut.io.delayMaxLength.poke(((1 << 12) - 1).asUInt)
       
       // Write the samples
       val th = fork {
         dut.io.signalIn.valid.poke(true.B)
         for (s <- 0 until samples.length / 8) {
+          var delayLenghtsIndex = s * delayLenghts.length / (samples.length / 8)
+          dut.io.delayLength.poke(delayLenghts(delayLenghtsIndex).asUInt)
           for (i <- 0 until 8) {
             dut.io.signalIn.bits(i).poke(samples(s * 8 + i).asSInt)
           }

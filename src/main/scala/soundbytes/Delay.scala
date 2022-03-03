@@ -9,7 +9,8 @@ import chisel3.util._
  * Supports dragging/boosting with half/twice the playback speed on changes of the delay time.
  *
  * Possible Improvements:
- * Using half/twice the playback speed on delay may be a bit drastic since it essentially lowers/increases the perceived pitch by an entire octave (or multiple with high feedback).
+ * Using half/twice the playback speed on delay may be a bit drastic.
+ * Essentially, it lowers/increases the perceived pitch by an entire octave (or multiple with sufficient feedback and delayLength delta).
  * However, it is convenient and has low hardware footprint.
  * Maybe it would be good to supports different mechanisms for this.
  */
@@ -53,11 +54,13 @@ class Delay(dataWidth: Int = 16, ptrWidth: Int = 12, counterBits: Int = 3, mixWi
   // State Variables.
   // Special computeDrag/computeBoost states are used when increasing/decreasing delayLength.
   // Prefetch and Interpolate is required to keep interpolation state for next operation during dragging.
+  // SecondRead is required to keep track during boosting.
   val idle :: readDelay :: compute :: computeDrag :: computeBoost :: writeDelay :: hasValue :: Nil = Enum(7)
   val regState = RegInit(idle)
   
   val regPrefetch = RegInit(false.B)
   val regInterpolate = RegInit(0.S(dataWidth.W))
+  val regSecondRead = RegInit(false.B)
   
   val computeCounter = Counter(packetSize)
   val dragCounter = (!regPrefetch) ## computeCounter.value.head(counterBits - 1)  // pattern is 0 0 1 1 2 2 ...
@@ -92,20 +95,11 @@ class Delay(dataWidth: Int = 16, ptrWidth: Int = 12, counterBits: Int = 3, mixWi
     }
     is (readDelay) {
       io.delayInReq.valid := true.B
-      
-      // If we are loading a second set of samples due to boosting we have to override the address accordingly.
-      when (computeCounter.value =/= 0.U) {
-        when (rdPtr === io.delayMaxLength) {
-          io.delayInReq.bits := 0.U
-        }.otherwise {
-          io.delayInReq.bits := rdPtr + 1.U
-        }
-      }
 
       when (io.delayInRsp.valid) {
         regDelInVals := io.delayInRsp.bits
         
-        when (regDelayLength === io.delayLength) {
+        when (regDelayLength === io.delayLength & !regSecondRead) {
           regState := compute
         }.elsewhen (regDelayLength < io.delayLength) {
           regInterpolate := regDelInVals(packetSize - 1)
@@ -178,11 +172,13 @@ class Delay(dataWidth: Int = 16, ptrWidth: Int = 12, counterBits: Int = 3, mixWi
         
         when (computeCounter.inc()) {
           regState := writeDelay
-          regDelayLength := regDelayLength - 1.U
+          regSecondRead := false.B
         }
         
         when (computeCounter.value === ((packetSize / 2) - 1).U) {
           regState := readDelay
+          regDelayLength := regDelayLength - 1.U
+          regSecondRead := true.B
         }
       }
     }

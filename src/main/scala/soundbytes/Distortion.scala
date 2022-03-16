@@ -9,9 +9,12 @@ import chisel3.util._
  * Gain can be controlled via an input parameter.
  *
  * The gainWidth and lookupWidth should be smaller than the dataWidth.
+ * For acceptable results, the gainWidth should also be smaller than the lookupWidth.
+ *
  * The multipliers are of size (absDataWidth) * (gainWidth) and (fractBits) * (fractBits)
  * For gainWidth <= lookupBits a single multiplier reduces to (absDataWidth) * (absDataWidth).
  */
+ 
 class Distortion(dataWidth: Int = 16, gainWidth: Int = 6, lookupBits: Int = 10, maxGain: Double = 350.0, singleMultiplier : Boolean = true) extends Module {
   val io = IO(new Bundle {
     val in = Flipped(new DecoupledIO(SInt(dataWidth.W)))
@@ -38,14 +41,6 @@ class Distortion(dataWidth: Int = 16, gainWidth: Int = 6, lookupBits: Int = 10, 
   val lookupValues = Range(lookupSteps - 1, maxGainSignal + 1, lookupSteps).map(i => maxSignal * (1.0 - scala.math.exp(-gainConst * i.toDouble / maxSignal.toDouble)))
   val lookupTable = VecInit(lookupValues.map(v => scala.math.round(v).asUInt(absDataWidth.W)))
 
-  println(gainDataWidth)
-  println(maxGainSignal)
-  println(fractBits)
-  println(lookupSteps)
-  println(gainConst)
-  println(lookupValues)
-  println(lookupValues.length)
-  
   // State Variables.
   val idle :: distort :: hasValue :: Nil = Enum(3)
   val regState = RegInit(idle)
@@ -81,7 +76,6 @@ class Distortion(dataWidth: Int = 16, gainWidth: Int = 6, lookupBits: Int = 10, 
   val regInterp = RegInit(0.U(absDataWidth.W))
 
   // Output Code.
-  val regOut = RegInit(0.U(absDataWidth.W))
   when(regInValSign === true.B) {
     io.out.bits := -(regInterp +& regLookupLow).asSInt()
   } .otherwise {
@@ -117,5 +111,78 @@ class Distortion(dataWidth: Int = 16, gainWidth: Int = 6, lookupBits: Int = 10, 
         regState := idle
       }
     }
+  }
+}
+
+/*
+ * Pipelined variant of the above distortion unit.
+ */
+class DistortionPipelined(dataWidth: Int = 16, gainWidth: Int = 6, lookupBits: Int = 10, maxGain: Double = 350.0) extends Module {
+  val io = IO(new Bundle {
+    val in = Flipped(new Valid(SInt(dataWidth.W)))
+    val out = new Valid(SInt(dataWidth.W))
+    val gain = Input(UInt(gainWidth.W))
+  })
+
+  // Number of bits required for absolute signal values without gain.
+  val absDataWidth = dataWidth - 1
+  val maxSignal = (1 << absDataWidth) - 1
+  
+  // Number of bits required for absolute signal values incl. gain.
+  val gainDataWidth = absDataWidth + gainWidth
+  val maxGainSignal = (1 << gainDataWidth) - 1
+
+  // Number of bits required for interpolation.
+  val fractBits = gainDataWidth - lookupBits
+  
+  // Steps and gain constant for the lookup table.
+  val lookupSteps = 1 << fractBits
+  val gainConst = maxGain / (1 << gainWidth).toDouble
+  
+  // Lookup table. We exclude the 0-index (will be muxed).
+  val lookupValues = Range(lookupSteps - 1, maxGainSignal + 1, lookupSteps).map(i => maxSignal * (1.0 - scala.math.exp(-gainConst * i.toDouble / maxSignal.toDouble)))
+  val lookupTable = VecInit(lookupValues.map(v => scala.math.round(v).asUInt(absDataWidth.W)))
+
+  // State Variables.
+  val regGainValid = RegInit(false.B)
+  val regDistortValid = RegInit(false.B)
+  
+  regGainValid := io.in.valid
+  regDistortValid := regGainValid
+  io.out.valid := regDistortValid
+  
+  // Gain stage.
+  val inVal = io.in.bits
+  val inValAbs = inVal.abs.asUInt.min(maxSignal.U).tail(1)  
+  val regInValSign = ShiftRegister(inVal(dataWidth - 1), 2) // delay by two stages
+
+  val gainMul = inValAbs * io.gain
+  val regInValGain = RegNext(gainMul)
+  
+  // Distortion stage.
+  val lookupIndex = regInValGain >> fractBits
+  val lookupFraction = regInValGain(fractBits - 1, 0)
+
+  val lookupLow = WireDefault(0.U(absDataWidth.W))
+  when(lookupIndex === 0.U) { // 0-index is excluded so we mux.
+    lookupLow := 0.U
+  }.otherwise {
+    lookupLow := lookupTable(lookupIndex - 1.U)
+  }
+  val lookupHigh = lookupTable(lookupIndex)
+  val lookupDiff = lookupHigh - lookupLow
+  val regLookupLow = RegInit(0.U(absDataWidth.W))
+  
+  val interpMul = lookupDiff * lookupFraction
+  val regInterp = RegInit(0.U(absDataWidth.W))
+
+  regLookupLow := lookupLow
+  regInterp := interpMul >> fractBits
+
+  // Output Code.
+  when(regInValSign === true.B) {
+    io.out.bits := -(regInterp +& regLookupLow).asSInt()
+  } .otherwise {
+    io.out.bits := (regInterp +& regLookupLow).asSInt()
   }
 }

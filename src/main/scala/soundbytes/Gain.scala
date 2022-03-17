@@ -39,3 +39,24 @@ class Gain(dataWidth: Int = 16, gainWidth: Int = 6, outputWidth: Int = 16) exten
     }
   }
 }
+
+/*
+ * Pipelined variant of the above gain unit.
+ */
+class GainPipelined(dataWidth: Int = 16, gainWidth: Int = 6, outputWidth: Int = 16) extends Module {
+  val io = IO(new Bundle {
+    val in = Flipped(new Valid(SInt(dataWidth.W)))
+    val out = new Valid(SInt(outputWidth.W))
+    val gain = Input(UInt(gainWidth.W))
+  })
+
+  
+  val regMul = RegInit(0.S(outputWidth.W))
+  val regValid = RegInit(false.B)
+
+  regMul := (io.in.bits * io.gain) >> (dataWidth + gainWidth - outputWidth)
+  regValid := io.in.valid
+  
+  io.out.bits := regMul
+  io.out.valid := regValid
+}

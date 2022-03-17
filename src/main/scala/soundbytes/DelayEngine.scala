@@ -39,3 +39,35 @@ class DelayEngine(dataWidth: Int = 16, mixWidth: Int = 6, feedbackWidth: Int = 6
   feedbackMix.io.in.bits(1) := io.in.bits(1)
   io.out.bits(1) := feedbackMix.io.out.bits
 }
+
+/**
+ * Variant of the above delay engine using the piplined mixers.
+ */
+class DelayEnginePipelined(dataWidth: Int = 16, mixWidth: Int = 6, feedbackWidth: Int = 6) extends Module {
+  val io = IO(new Bundle {
+    val in = Flipped(new Valid(Vec(2, SInt(dataWidth.W))))
+    val out = new Valid(Vec(2, SInt(dataWidth.W)))
+    val mix = Input(UInt(mixWidth.W))
+    val feedback = Input(UInt(feedbackWidth.W))
+  })
+  
+  val delayMix = Module(new MixerPipelined(dataWidth, mixWidth))
+  val feedbackMix = Module(new MixerPipelined(dataWidth, feedbackWidth))
+  
+  delayMix.io.in.valid := io.in.valid
+  delayMix.io.mix := io.mix
+  feedbackMix.io.in.valid := io.in.valid
+  feedbackMix.io.mix := io.feedback
+  
+  io.out.valid := delayMix.io.out.valid & feedbackMix.io.out.valid
+  
+  // Input is always present in the output signal (delay < 1)
+  delayMix.io.in.bits(0) := io.in.bits(0)
+  delayMix.io.in.bits(1) := io.in.bits(1)
+  io.out.bits(0) := delayMix.io.out.bits
+  
+  // Input is always present in the delay output signal (feedback < 1)
+  feedbackMix.io.in.bits(0) := io.in.bits(0)
+  feedbackMix.io.in.bits(1) := io.in.bits(1)
+  io.out.bits(1) := feedbackMix.io.out.bits
+}
